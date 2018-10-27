@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdbool.h>
 #include "csapp.h"
 
 /* Recommended max cache and object sizes */
@@ -9,7 +10,18 @@
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
 
 
+/* Structure for populating the content from the uri */
+struct req_content {
+    char host[MAXLINE];
+    char path[MAXLINE];
+    int port;
+};
+
+
+
 void doit(int fd);
+void parse_uri(char *uri, struct req_content *content);
+bool read_requesthdrs(rio_t *rp, char *data);
 void clienterror(int fd, char *cause, char *errnum,
                  char *shortmsg, char *longmsg);
 
@@ -43,24 +55,127 @@ int main(int argc, char **argv)
 
 
 void doit(int fd) {
-    int is_static;
+
     struct stat sbuf;
+
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
-    char filename[MAXLINE], cgiargs[MAXLINE];
+    char hdr_data[MAXLINE], new_request[MAXBUF], response[1<<15]; //bitwise shift?
+
     rio_t rio;
+    struct req_content content;
+
+    int clientfd;
+    bool is_dynamic, host_mentioned;
+
+
+    //timer++;
 
     /* Read request line and headers */
     Rio_readinitb(&rio, fd);
     if (!Rio_readlineb(&rio, buf, MAXLINE))
         return;
-    printf("First line read %s\n", buf);
+    printf("%s\n", buf);
     sscanf(buf, "%s %s %s", method, uri, version);
+
+    /* Proxy returns error if HTTP Request is NOT GET */
     if (strcasecmp(method, "GET")) {
         clienterror(fd, method, "501", "Not Implemented",
-                    "Tiny does not implement this method");
+                    "Proxy does not implement this method");
         return;
     }
+
+    /* if requested resource is in the "cgi-bin" directory, then content is dynamic */
+    if(strstr(uri, "cgi-bin"))
+        is_dynamic = true;
+
+    /* Parse HTTP request: extract hostname, path and port into content struct */
+    parse_uri(uri, &content);
+
+
+    /* check if in cache to do */
+    if (0){                                      //IMPLEMENT THIS!! :)
+        ;
+    }
+    else{ /* not in cache, get resource from host server */
+
+
+
+        //Parse the request headers.
+        host_mentioned = read_requesthdrs(&rio, hdr_data);
+
+
+
+
+
+
+
+        //Create new connection with server
+        clientfd = Open_clientfd(content.host, content.port);
+
+        //Write HTTP request to the server
+        Rio_writen(clientfd, new_request, sizeof(new_request));
+
+    }
+
+
+
 }
+
+
+
+
+
+/*  parse_uri - read HTTP request headers */
+void parse_uri(char *uri, struct req_content *content)
+{
+    char temp[MAXLINE];
+
+    //Extract path to resource
+    if(strstr(uri,"http://") != NULL) {
+        sscanf(uri, "http://%[^/]%s", temp, content->path);
+        printf("Received path %s\n", content->path);
+    }
+    else
+        sscanf(uri, "%[^/]%s", temp, content->path);
+
+    //Extract port number and hostname
+    if(strstr(temp, ":") != NULL) {
+        sscanf(temp, "%[^:]:%d", content->host, &content->port);
+        printf("Received port %s\n", content->port);
+    }
+    else {
+        strcpy(content->host,temp);
+        content->port = 80;
+    }
+
+    // in case the path to resource is empty
+    if(!content->path[0])
+        strcpy(content->path,"./");
+
+}
+
+
+/*  read_requesthdrs - read HTTP request headers */
+bool read_requesthdrs(rio_t *rp, char *data)
+{
+    char buf[MAXLINE];
+
+    Rio_readlineb(rp, buf, MAXLINE);
+    printf("%s", buf);
+    while(strcmp(buf, "\r\n")) {
+        Rio_readlineb(rp, buf, MAXLINE);
+        printf("%s", buf);
+    }
+    return true;
+}
+
+
+
+
+
+
+
+
 
 
 
