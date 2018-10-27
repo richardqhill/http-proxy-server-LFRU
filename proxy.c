@@ -131,16 +131,23 @@ void doit(int connfd) {
 
         /* Read response from server */
 
-        char response_header_buf[MAXLINE];
-        Rio_readinitb(&rio_response, clientfd);
-        if (!Rio_readlineb(&rio_response, response_header_buf, MAXLINE))
-            return;
-        printf("%s\n", response_header_buf);
+        char response_buf[MAXLINE];
+        char resp_header_buf[1<<16];
 
-        while(1){
-            Rio_readlineb(&rio_response, response_header_buf, MAXLINE);
-            Rio_writen(connfd, response_header_buf, sizeof(response_header_buf));
-        }
+        Rio_readinitb(&rio_response, clientfd);
+        if (!Rio_readlineb(&rio_response, resp_header_buf, MAXLINE))
+            return;
+        printf("%s\n", resp_header_buf);
+
+        ssize_t read_len = 0;
+        ssize_t buff_offset = 0;
+        do{
+            read_len = Rio_readlineb(&rio_response, response_buf, MAXLINE);
+            buff_offset += read_len;
+
+            memcpy(resp_header_buf+buff_offset,response_buf,read_len);
+
+        }while(strcmp(response_buf, "\r\n"));
 
         char req_body_buf[1<<15];
 
@@ -156,7 +163,7 @@ void doit(int connfd) {
         // CACHING TO DO
 
         //Forward the response to the client
-        //Rio_writen(connfd, response, sizeof(response));
+        Rio_writen(connfd, resp_header_buf, sizeof(resp_header_buf));
 
         Close(clientfd);
     }
