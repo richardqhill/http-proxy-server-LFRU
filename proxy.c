@@ -21,7 +21,8 @@ struct req_content {
 
 void doit(int connfd);
 void parse_uri(char *uri, struct req_content *content);
-bool read_requesthdrs(rio_t *rp, char *data);
+
+bool read_requesthdrs(rio_t *rp, char *header_buf);
 void clienterror(int fd, char *cause, char *errnum,
                  char *shortmsg, char *longmsg);
 
@@ -59,10 +60,12 @@ void doit(int connfd) {
     struct stat sbuf;
 
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
-    char hdr_data[MAXLINE], new_request[MAXBUF], response[1<<15]; //bitwise shift?
+    char hdr_data[MAXLINE], new_request[MAXBUF]; //bitwise shift?
+    char * response;
 
     rio_t rio;
     struct req_content content;
+    int content_len;
 
     int clientfd, response_size;
     bool is_dynamic;
@@ -103,6 +106,9 @@ void doit(int connfd) {
 
         /* Parse the request headers */
         host_mentioned = read_requesthdrs(&rio, hdr_data);
+
+        int temp = atoi(content_len);
+        response = malloc(temp);
 
         /* Begin generating new modified HTTP request to forward to the server */
         sprintf(new_request, "GET %s HTTP/1.0\r\n", content.path);
@@ -168,7 +174,7 @@ void parse_uri(char *uri, struct req_content *content)
 
 
 /*  read_requesthdrs - read HTTP request headers, return whether or not host was present in headers */
-bool read_requesthdrs(rio_t *rp, char *data)
+bool read_requesthdrs(rio_t *rp, char *header_buf)
 {
     char buf[MAXLINE];
     bool host_header_present = false;
@@ -184,13 +190,13 @@ bool read_requesthdrs(rio_t *rp, char *data)
             continue;
 
         if(strstr(buf, "Host:")) {
-            sprintf(data, "%s%s", data, buf);
+            sprintf(header_buf, "%s%s", header_buf, buf);
             host_header_present = true;
             continue;
         }
 
         /* Proxy will pass along any additional request headers unchanged */
-        sprintf(data, "%s%s", data, buf);
+        sprintf(header_buf, "%s%s", header_buf, buf);
 
     }while(strcmp(buf, "\r\n"));
     return host_header_present;
