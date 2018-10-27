@@ -66,11 +66,9 @@ void doit(int connfd) {
     rio_t rio_req, rio_response;
     struct req_content content;
 
-
     int clientfd, response_size;
     bool is_dynamic;
     bool host_mentioned;
-
 
     //timer++;
 
@@ -95,19 +93,14 @@ void doit(int connfd) {
     /* Parse HTTP request: extract hostname, path and port into content struct */
     parse_uri(uri, &content);
 
-
     /* check if in cache to do */
     if (0){                                      //IMPLEMENT THIS!! :)
         char response[MAXBUF+MAX_OBJECT_SIZE];
     }
     else{ /* not in cache, get resource from host server */
 
-
-
         /* Parse the request headers */
         host_mentioned = read_requesthdrs(&rio_req, hdr_data);
-
-
 
         /* Begin generating new modified HTTP request to forward to the server */
         sprintf(new_request, "GET %s HTTP/1.0\r\n", content.path);
@@ -122,7 +115,6 @@ void doit(int connfd) {
         strcat(new_request, proxy_conn_hdr);
         strcat(new_request, "\r\n");
 
-
         /* Create new connection with server */
         clientfd = Open_clientfd(&content.host, &content.port);
 
@@ -132,38 +124,53 @@ void doit(int connfd) {
         /* Read response from server */
 
         char response_buf[MAXLINE];
-        char resp_header_buf[1<<16];
+        char resp_header_buf[1<<15]; /* There is no predefined limit on length of header */
 
         Rio_readinitb(&rio_response, clientfd);
         if (!Rio_readlineb(&rio_response, resp_header_buf, MAXLINE))
             return;
         printf("%s\n", resp_header_buf);
 
-        ssize_t read_len = 0;
-        ssize_t buff_offset = 0;
+        char content_length_line_buff[MAXLINE];
+        char content_length_buff[1000];
+        char temp[1000];
+
+        /* Read all headers and extract content length */
         do{
-            read_len = Rio_readlineb(&rio_response, response_buf, MAXLINE);
-            buff_offset += read_len;
+            Rio_readlineb(&rio_response, response_buf, MAXLINE);
+            sprintf(resp_header_buf,"%s%s",resp_header_buf,response_buf);
 
-            memcpy(resp_header_buf+buff_offset,response_buf,read_len);
-
+            if(strstr(response_buf, "Content-length:")){
+                sprintf(content_length_line_buff, "%s", response_buf);
+            }
         }while(strcmp(response_buf, "\r\n"));
 
-        char req_body_buf[1<<15];
+
+        sscanf(content_length_line_buff,"%[^:]:%s", &temp, &content_length_buff);
+        int content_length = atoi(content_length_buff);
+
+        char resp_body_buf[1<<14]; // WHY DOESN'T CONTENT LENGTH WORK HERE
+        int read_len = 0;
+        do{
+            read_len = Rio_readlineb(&rio_response, response_buf, MAXLINE);
+            sprintf(resp_body_buf,"%s%s",resp_body_buf, response_buf);
+        }while(read_len!=0);
+
+
+        char complete_response[1<<15]; // WHY DOESN'T CONTENT LENGTH WORK HERE
+        sprintf(complete_response,"%s%s",resp_header_buf,resp_body_buf);
+
+
+
+
 
         //response_size = Rio_readn(clientfd, response, sizeof(response));
-
-
-
-
-
-
 
 
         // CACHING TO DO
 
         //Forward the response to the client
-        Rio_writen(connfd, resp_header_buf, sizeof(resp_header_buf));
+        Rio_writen(connfd, complete_response, sizeof(complete_response));
 
         Close(clientfd);
     }
