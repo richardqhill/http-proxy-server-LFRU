@@ -60,12 +60,12 @@ void doit(int connfd) {
     struct stat sbuf;
 
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
-    char hdr_data[MAXLINE], new_request[MAXBUF]; //bitwise shift?
-    char * response;
+    char hdr_data[MAXLINE], new_request[MAXBUF], response_hdr[MAXBUF]; //bitwise shift?
+    char * response_body;
 
-    rio_t rio;
+    rio_t rio_req, rio_response;
     struct req_content content;
-    int content_len;
+
 
     int clientfd, response_size;
     bool is_dynamic;
@@ -75,8 +75,8 @@ void doit(int connfd) {
     //timer++;
 
     /* Read request line and headers */
-    Rio_readinitb(&rio, connfd);
-    if (!Rio_readlineb(&rio, buf, MAXLINE))
+    Rio_readinitb(&rio_req, connfd);
+    if (!Rio_readlineb(&rio_req, buf, MAXLINE))
         return;
     printf("%s\n", buf);
     sscanf(buf, "%s %s %s", method, uri, version);
@@ -98,17 +98,16 @@ void doit(int connfd) {
 
     /* check if in cache to do */
     if (0){                                      //IMPLEMENT THIS!! :)
-        ;
+        char response[MAXBUF+MAX_OBJECT_SIZE];
     }
     else{ /* not in cache, get resource from host server */
 
 
 
         /* Parse the request headers */
-        host_mentioned = read_requesthdrs(&rio, hdr_data);
+        host_mentioned = read_requesthdrs(&rio_req, hdr_data);
 
-        int temp = atoi(content_len);
-        response = malloc(temp);
+
 
         /* Begin generating new modified HTTP request to forward to the server */
         sprintf(new_request, "GET %s HTTP/1.0\r\n", content.path);
@@ -131,16 +130,38 @@ void doit(int connfd) {
         Rio_writen(clientfd, new_request, sizeof(new_request));
 
         /* Read response from server */
-        response_size = Rio_readn(clientfd, response, sizeof(response));
+
+        char response_header_buf[MAXLINE];
+        Rio_readinitb(&rio_response, clientfd);
+        if (!Rio_readlineb(&rio_response, response_header_buf, MAXLINE))
+            return;
+        printf("%s\n", response_header_buf);
+
+        while(1){
+            Rio_readlineb(&rio_response, response_header_buf, MAXLINE);
+            Rio_writen(connfd, response_header_buf, sizeof(response_header_buf));
+        }
+
+        char req_body_buf[1<<15];
+
+        //response_size = Rio_readn(clientfd, response, sizeof(response));
+
+
+
+
+
+
 
 
         // CACHING TO DO
 
+        //Forward the response to the client
+        //Rio_writen(connfd, response, sizeof(response));
+
         Close(clientfd);
     }
 
-    //Forward the response to the client
-    Rio_writen(connfd, response, sizeof(response));
+
 }
 
 
