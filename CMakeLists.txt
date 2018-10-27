@@ -7,13 +7,10 @@ include_directories(.)
 include_directories(cmake-build-debug)
 include_directories(tiny)
 
-add_executable(
-        csapp.c
+set(SOURCE_FILES
         csapp.h
-        driver.sh
-        free-port.sh
-        nop-server.py
-        port-for-user.pl
-        proxy
+        csapp.c
         proxy.c
- )
+        )
+
+add_executable(Proxy proxy.c csapp.c)

@@ -53,7 +53,7 @@ void doit(int fd) {
     Rio_readinitb(&rio, fd);
     if (!Rio_readlineb(&rio, buf, MAXLINE))
         return;
-    printf("%s", buf);
+    printf("First line read %s\n", buf);
     sscanf(buf, "%s %s %s", method, uri, version);
     if (strcasecmp(method, "GET")) {
         clienterror(fd, method, "501", "Not Implemented",
@@ -63,10 +63,9 @@ void doit(int fd) {
 }
 
 
-/*
- * clienterror - returns an error message to the client
- */
-/* $begin clienterror */
+
+
+/* clienterror - returns an error message to the client */
 void clienterror(int fd, char *cause, char *errnum,
                  char *shortmsg, char *longmsg)
 {
@@ -88,4 +87,3 @@ void clienterror(int fd, char *cause, char *errnum,
     Rio_writen(fd, buf, strlen(buf));
     Rio_writen(fd, body, strlen(body));
 }
-/* $end clienterror */
