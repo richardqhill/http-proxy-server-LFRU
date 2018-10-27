@@ -923,7 +923,7 @@ int open_clientfd(char *hostname, char *port) {
     int clientfd, rc;
     struct addrinfo hints, *listp, *p;
 
-    fprintf(stderr,"Openclientfd was passed port %s\n", &port);
+    fprintf(stderr,"Openclientfd was passed port %s\n", port);
 
     /* Get a list of potential server addresses */
     memset(&hints, 0, sizeof(struct addrinfo));

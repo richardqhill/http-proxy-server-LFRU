@@ -208,19 +208,17 @@ echo "*** Basic ***"
 tiny_port=$(free_port)
 echo "Starting tiny on ${tiny_port}"
 cd ./tiny
-./tiny ${tiny_port}   &> /dev/null  &
+./tiny ${tiny_port}   &
 tiny_pid=$!
-echo ${HOME_DIR}
 cd ${HOME_DIR}
 
 # Wait for tiny to start in earnest
 wait_for_port_use "${tiny_port}"
 
 # Run the proxy
-echo `pwd`
 proxy_port=$(free_port)
 echo "Starting proxy on ${proxy_port}"
-./proxy ${proxy_port}   &
+./proxy ${proxy_port}  &
 proxy_pid=$!
 
 # Wait for the proxy to start in earnest
@@ -278,9 +276,11 @@ echo "*** Concurrency ***"
 tiny_port=$(free_port)
 echo "Starting tiny on port ${tiny_port}"
 cd ./tiny
-./tiny ${tiny_port} &> /dev/null &
+./tiny ${tiny_port} &
 tiny_pid=$!
-cd ${HOME_DIR}
+echo pwd
+cd ..
+echo pwd
 
 # Wait for tiny to start in earnest
 wait_for_port_use "${tiny_port}"
@@ -288,7 +288,7 @@ wait_for_port_use "${tiny_port}"
 # Run the proxy
 proxy_port=$(free_port)
 echo "Starting proxy on port ${proxy_port}"
-./proxy ${proxy_port} &> /dev/null &
+./proxy ${proxy_port} &
 proxy_pid=$!
 
 # Wait for the proxy to start in earnest
