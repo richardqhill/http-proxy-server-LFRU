@@ -8,18 +8,18 @@
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
-
+static const char *connection_hdr = "Connection: close\r\n";
+static const char *proxy_conn_hdr = "Proxy-Connection: close\r\n";
 
 /* Structure for populating the content from the uri */
 struct req_content {
     char host[MAXLINE];
     char path[MAXLINE];
-    int port;
+    char port[MAXLINE];
 };
 
 
-
-void doit(int fd);
+void doit(int connfd);
 void parse_uri(char *uri, struct req_content *content);
 bool read_requesthdrs(rio_t *rp, char *data);
 void clienterror(int fd, char *cause, char *errnum,
@@ -54,7 +54,7 @@ int main(int argc, char **argv)
 }
 
 
-void doit(int fd) {
+void doit(int connfd) {
 
     struct stat sbuf;
 
@@ -64,14 +64,15 @@ void doit(int fd) {
     rio_t rio;
     struct req_content content;
 
-    int clientfd;
-    bool is_dynamic, host_mentioned;
+    int clientfd, response_size;
+    bool is_dynamic;
+    bool host_mentioned;
 
 
     //timer++;
 
     /* Read request line and headers */
-    Rio_readinitb(&rio, fd);
+    Rio_readinitb(&rio, connfd);
     if (!Rio_readlineb(&rio, buf, MAXLINE))
         return;
     printf("%s\n", buf);
@@ -79,7 +80,7 @@ void doit(int fd) {
 
     /* Proxy returns error if HTTP Request is NOT GET */
     if (strcasecmp(method, "GET")) {
-        clienterror(fd, method, "501", "Not Implemented",
+        clienterror(connfd, method, "501", "Not Implemented",
                     "Proxy does not implement this method");
         return;
     }
@@ -100,25 +101,40 @@ void doit(int fd) {
 
 
 
-        //Parse the request headers.
+        /* Parse the request headers */
         host_mentioned = read_requesthdrs(&rio, hdr_data);
 
+        /* Begin generating new modified HTTP request to forward to the server */
+        sprintf(new_request, "GET %s HTTP/1.0\r\n", content.path);
+
+        /* If host was in header, use that. If not, grab host from URI */
+        if(!host_mentioned)
+            sprintf(new_request, "%sHost: %s\r\n", new_request, content.host);
+
+        strcat(new_request, hdr_data);
+        strcat(new_request, user_agent_hdr);
+        strcat(new_request, connection_hdr);
+        strcat(new_request, proxy_conn_hdr);
+        strcat(new_request, "\r\n");
 
 
+        /* Create new connection with server */
+        clientfd = Open_clientfd(&content.host, &content.port);
 
-
-
-
-        //Create new connection with server
-        clientfd = Open_clientfd(content.host, content.port);
-
-        //Write HTTP request to the server
+        /* Write HTTP request to server */
         Rio_writen(clientfd, new_request, sizeof(new_request));
 
+        /* Read response from server */
+        response_size = Rio_readn(clientfd, response, sizeof(response));
+
+
+        // CACHING TO DO
+
+        Close(clientfd);
     }
 
-
-
+    //Forward the response to the client
+    Rio_writen(connfd, response, sizeof(response));
 }
 
 
@@ -130,22 +146,18 @@ void parse_uri(char *uri, struct req_content *content)
 {
     char temp[MAXLINE];
 
-    //Extract path to resource
-    if(strstr(uri,"http://") != NULL) {
-        sscanf(uri, "http://%[^/]%s", temp, content->path);
-        printf("Received path %s\n", content->path);
-    }
+    //Extract the path to the resource
+    if(strstr(uri,"http://") != NULL)
+        sscanf( uri, "http://%[^/]%s", temp, content->path);
     else
-        sscanf(uri, "%[^/]%s", temp, content->path);
+        sscanf( uri, "%[^/]%s", temp, content->path);
 
-    //Extract port number and hostname
-    if(strstr(temp, ":") != NULL) {
-        sscanf(temp, "%[^:]:%d", content->host, &content->port);
-        printf("Received port %s\n", content->port);
-    }
+    //Extract the port number and the hostname
+    if( strstr(temp, ":") != NULL)
+        sscanf(temp,"%[^:]:%s", content->host, &content->port);
     else {
         strcpy(content->host,temp);
-        content->port = 80;
+        strcpy(content->port, '80');
     }
 
     // in case the path to resource is empty
@@ -155,29 +167,35 @@ void parse_uri(char *uri, struct req_content *content)
 }
 
 
-/*  read_requesthdrs - read HTTP request headers */
+/*  read_requesthdrs - read HTTP request headers, return whether or not host was present in headers */
 bool read_requesthdrs(rio_t *rp, char *data)
 {
     char buf[MAXLINE];
+    bool host_header_present = false;
 
-    Rio_readlineb(rp, buf, MAXLINE);
-    printf("%s", buf);
-    while(strcmp(buf, "\r\n")) {
+    do {
         Rio_readlineb(rp, buf, MAXLINE);
-        printf("%s", buf);
-    }
-    return true;
+
+        if(!strcmp(buf, "\r\n"))
+            continue;
+
+        /* Ignore these headers, we will substitute our own (defined at top of file) */
+        if(strstr(buf, "User-Agent:") || strstr(buf, "Connection:") || strstr(buf, "Proxy-Connection:"))
+            continue;
+
+        if(strstr(buf, "Host:")) {
+            sprintf(data, "%s%s", data, buf);
+            host_header_present = true;
+            continue;
+        }
+
+        /* Proxy will pass along any additional request headers unchanged */
+        sprintf(data, "%s%s", data, buf);
+
+    }while(strcmp(buf, "\r\n"));
+    return host_header_present;
+
 }
-
-
-
-
-
-
-
-
-
-
 
 
 /* clienterror - returns an error message to the client */
