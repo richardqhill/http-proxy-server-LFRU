@@ -3,6 +3,7 @@
     <words>
       <w>clientaddr</w>
       <w>clienterror</w>
+      <w>clientfd</w>
       <w>clientlen</w>
       <w>connfd</w>
       <w>listenfd</w>

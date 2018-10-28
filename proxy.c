@@ -20,7 +20,7 @@ struct req_content {
 
 
 void doit(int connfd);
-void parse_uri(char *uri, struct req_content *content);
+void parse_uri(char *uri, struct req_content *content, bool* is_dynamic);
 
 bool read_requesthdrs(rio_t *rp, char *header_buf);
 void clienterror(int fd, char *cause, char *errnum,
@@ -40,8 +40,6 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    printf("received port# %s\n",argv[1]);
-
     listenfd = Open_listenfd(argv[1]);
     while (1) {
         clientlen = sizeof(clientaddr);
@@ -57,18 +55,12 @@ int main(int argc, char **argv)
 
 void doit(int connfd) {
 
-    struct stat sbuf;
-
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
-    char hdr_data[MAXLINE], new_request[MAXBUF], response_hdr[MAXBUF]; //bitwise shift?
-    char * response_body;
-
+    char hdr_data[MAXLINE], new_request[MAXBUF], response_hdrs_buf[1<<15]; /* bitwise shift */
     rio_t rio_req, rio_response;
     struct req_content content;
-
-    int clientfd, response_size;
-    bool is_dynamic;
-    bool host_mentioned;
+    int clientfd;
+    bool is_dynamic, host_mentioned;
 
     //timer++;
 
@@ -81,25 +73,19 @@ void doit(int connfd) {
 
     /* Proxy returns error if HTTP Request is NOT GET */
     if (strcasecmp(method, "GET")) {
-        clienterror(connfd, method, "501", "Not Implemented",
-                    "Proxy does not implement this method");
+        clienterror(connfd, method, "501", "Not Implemented", "Proxy does not implement this method");
         return;
     }
 
-    /* if requested resource is in the "cgi-bin" directory, then content is dynamic */
-    if(strstr(uri, "cgi-bin"))
-        is_dynamic = true;
+    /* Parse URI: update dynamic flag and extract hostname, path and port into content struct */
+    parse_uri(uri, &content, &is_dynamic);
 
-    /* Parse HTTP request: extract hostname, path and port into content struct */
-    parse_uri(uri, &content);
-
-    /* check if in cache to do */
+    /* Check if URI is in cache */
     if (0){                                      //IMPLEMENT THIS!! :)
         char response[MAXBUF+MAX_OBJECT_SIZE];
     }
-    else{ /* not in cache, get resource from host server */
-
-        /* Parse the request headers */
+    else{ /* If not in cache, get resource from host server */
+        /* Parse the request headers into hdr_data and return if host header was present */
         host_mentioned = read_requesthdrs(&rio_req, hdr_data);
 
         /* Begin generating new modified HTTP request to forward to the server */
@@ -109,27 +95,26 @@ void doit(int connfd) {
         if(!host_mentioned)
             sprintf(new_request, "%sHost: %s\r\n", new_request, content.host);
 
-        strcat(new_request, hdr_data);
-        strcat(new_request, user_agent_hdr);
-        strcat(new_request, connection_hdr);
-        strcat(new_request, proxy_conn_hdr);
-        strcat(new_request, "\r\n");
+        sprintf(new_request,"%s%s%s%s%s%s", new_request, hdr_data, user_agent_hdr,
+                connection_hdr, proxy_conn_hdr, "\r\n");
 
-        /* Create new connection with server */
+        /* Create new connection with server and write HTTP request to server */
         clientfd = Open_clientfd(&content.host, &content.port);
-
-        /* Write HTTP request to server */
         Rio_writen(clientfd, new_request, sizeof(new_request));
 
+
+
+
         /* Read response from server */
+        /* We file all response headers into response_hdrs_buf, extract content length from the header and file the
+         * rest of the response into response_body. We forward these to the requester */
 
-        char response_buf[MAXLINE];
-        char resp_header_buf[1<<15]; /* There is no predefined limit on length of header */
-
+        memset(buf, NULL, sizeof(buf));
         Rio_readinitb(&rio_response, clientfd);
-        if (!Rio_readlineb(&rio_response, resp_header_buf, MAXLINE))
+
+        if (!Rio_readlineb(&rio_response, buf, MAXLINE))
             return;
-        printf("%s\n", resp_header_buf);
+
 
         char content_length_line_buff[MAXLINE];
         char content_length_buff[1000];
@@ -137,44 +122,44 @@ void doit(int connfd) {
 
         /* Read all headers and extract content length */
         do{
-            Rio_readlineb(&rio_response, response_buf, MAXLINE);
-            sprintf(resp_header_buf,"%s%s",resp_header_buf,response_buf);
+            Rio_readlineb(&rio_response, buf, MAXLINE);
+            sprintf(response_hdrs_buf,"%s%s",response_hdrs_buf,buf);
 
-            if(strstr(response_buf, "Content-length:")){
-                sprintf(content_length_line_buff, "%s", response_buf);
+            if(strstr(buf, "Content-length:")){
+                sprintf(content_length_line_buff, "%s", buf);
             }
-        }while(strcmp(response_buf, "\r\n"));
+        }while(strcmp(buf, "\r\n"));
 
 
         sscanf(content_length_line_buff,"%[^:]:%s", &temp, &content_length_buff);
         int content_length = atoi(content_length_buff);
 
-        char resp_body_buf[1<<14]; // WHY DOESN'T CONTENT LENGTH WORK HERE
+        char resp_body_buf[1<<16]; // WHY DOESN'T CONTENT LENGTH WORK HERE
         int read_len = 0;
         do{
-            read_len = Rio_readlineb(&rio_response, response_buf, MAXLINE);
-            sprintf(resp_body_buf,"%s%s",resp_body_buf, response_buf);
+            read_len = Rio_readlineb(&rio_response, buf, MAXLINE);
+            sprintf(resp_body_buf,"%s%s",resp_body_buf, buf);
         }while(read_len!=0);
 
 
-        char complete_response[1<<15]; // WHY DOESN'T CONTENT LENGTH WORK HERE
-        sprintf(complete_response,"%s%s",resp_header_buf,resp_body_buf);
+        char complete_response[1<<16]; // WHY DOESN'T CONTENT LENGTH WORK HERE
+        sprintf(complete_response,"%s%s",response_hdrs_buf,resp_body_buf);
 
 
 
 
 
-        //response_size = Rio_readn(clientfd, response, sizeof(response));
+
 
 
         // CACHING TO DO
 
         //Forward the response to the client
         Rio_writen(connfd, complete_response, sizeof(complete_response));
-
         Close(clientfd);
     }
 
+    //response_size = Rio_readn(clientfd, response, sizeof(response));
 
 }
 
@@ -183,8 +168,12 @@ void doit(int connfd) {
 
 
 /*  parse_uri - read HTTP request headers */
-void parse_uri(char *uri, struct req_content *content)
+void parse_uri(char *uri, struct req_content *content, bool* is_dynamic)
 {
+    /* If requested resource is in the "cgi-bin" directory, then content is dynamic */
+    if(strstr(uri, "cgi-bin"))
+        *is_dynamic = true;
+
     char temp[MAXLINE];
 
     //Extract the path to the resource
