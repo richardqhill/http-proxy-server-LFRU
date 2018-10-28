@@ -44,7 +44,6 @@ void sig_handler(int sig);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
 
 
-
 int main(int argc, char **argv)
 {
     Signal(SIGPIPE, sig_handler); // Ignore SIGPIPE
@@ -77,6 +76,9 @@ int main(int argc, char **argv)
         printf("Accepted connection from (%s, %s)\n", hostname, port);
 
         Pthread_create(&tid, NULL, (void *)thread_wrapper, connfd);
+
+        //doit(*connfd);
+        //close(*connfd);
     }
     return 0;
 }
@@ -84,8 +86,9 @@ int main(int argc, char **argv)
 
 void doit(int connfd) {
 
-    char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
-    char hdr_data[MAXLINE], new_request[MAXBUF], response[1<<18]; /*Is there a max response size? */
+    char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE], hdr_data[MAXLINE], new_request[MAXBUF];
+    char response[380000]; /* Large enough to handle beeg 354kb without causing EXC_BAD_ACCESS */
+
     rio_t rio;
     struct uri_content content;
     int clientfd;
@@ -159,7 +162,6 @@ void doit(int connfd) {
 }
 
 
-
 /*  parse_uri - read HTTP request headers */
 void parse_uri(char *uri, struct uri_content *content, bool* is_dynamic)
 {
@@ -226,7 +228,7 @@ void write_to_cache(char *uri, char *data, int size){
 
     //Cache is not full - Add a new block without eviction
     if(cache_size + size <= MAX_CACHE_SIZE) {
-
+        ;
     }
 
 }
