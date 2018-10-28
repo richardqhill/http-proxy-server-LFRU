@@ -6,12 +6,12 @@
 #define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
 
-/* You won't lose style points for including this long line in your code */
-static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
+static const char *user_agent_hdr =
+        "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
 static const char *connection_hdr = "Connection: close\r\n";
 static const char *proxy_conn_hdr = "Proxy-Connection: close\r\n";
 
-/* Structure for populating the content from the uri */
+/* Struct for populating the content from URI */
 struct req_content {
     char host[MAXLINE];
     char path[MAXLINE];
@@ -21,10 +21,10 @@ struct req_content {
 
 void doit(int connfd);
 void parse_uri(char *uri, struct req_content *content, bool* is_dynamic);
-
 bool read_requesthdrs(rio_t *rp, char *header_buf);
 void clienterror(int fd, char *cause, char *errnum,
                  char *shortmsg, char *longmsg);
+
 
 
 int main(int argc, char **argv)
@@ -56,8 +56,8 @@ int main(int argc, char **argv)
 void doit(int connfd) {
 
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
-    char hdr_data[MAXLINE], new_request[MAXBUF], response_hdrs_buf[1<<15]; /* bitwise shift */
-    rio_t rio_req, rio_response;
+    char hdr_data[MAXLINE], new_request[MAXBUF], response[1<<20]; /*Is there a max response size? Maybe max object *2?*/
+    rio_t rio;
     struct req_content content;
     int clientfd;
     bool is_dynamic, host_mentioned;
@@ -65,8 +65,8 @@ void doit(int connfd) {
     //timer++;
 
     /* Read request line and headers */
-    Rio_readinitb(&rio_req, connfd);
-    if (!Rio_readlineb(&rio_req, buf, MAXLINE))
+    Rio_readinitb(&rio, connfd);
+    if (!Rio_readlineb(&rio, buf, MAXLINE))
         return;
     printf("%s\n", buf);
     sscanf(buf, "%s %s %s", method, uri, version);
@@ -82,11 +82,16 @@ void doit(int connfd) {
 
     /* Check if URI is in cache */
     if (0){                                      //IMPLEMENT THIS!! :)
+
+
         char response[MAXBUF+MAX_OBJECT_SIZE];
+
+
     }
     else{ /* If not in cache, get resource from host server */
+
         /* Parse the request headers into hdr_data and return if host header was present */
-        host_mentioned = read_requesthdrs(&rio_req, hdr_data);
+        host_mentioned = read_requesthdrs(&rio, hdr_data);
 
         /* Begin generating new modified HTTP request to forward to the server */
         sprintf(new_request, "GET %s HTTP/1.0\r\n", content.path);
@@ -102,65 +107,24 @@ void doit(int connfd) {
         clientfd = Open_clientfd(&content.host, &content.port);
         Rio_writen(clientfd, new_request, sizeof(new_request));
 
-
-
-
         /* Read response from server */
-        /* We file all response headers into response_hdrs_buf, extract content length from the header and file the
-         * rest of the response into response_body. We forward these to the requester */
+        Rio_readn(clientfd, response, sizeof(response));
 
-        memset(buf, NULL, sizeof(buf));
-        Rio_readinitb(&rio_response, clientfd);
-
-        if (!Rio_readlineb(&rio_response, buf, MAXLINE))
-            return;
-
-
-        char content_length_line_buff[MAXLINE];
-        char content_length_buff[1000];
-        char temp[1000];
-
-        /* Read all headers and extract content length */
-        do{
-            Rio_readlineb(&rio_response, buf, MAXLINE);
-            sprintf(response_hdrs_buf,"%s%s",response_hdrs_buf,buf);
-
-            if(strstr(buf, "Content-length:")){
-                sprintf(content_length_line_buff, "%s", buf);
-            }
-        }while(strcmp(buf, "\r\n"));
-
-
-        sscanf(content_length_line_buff,"%[^:]:%s", &temp, &content_length_buff);
-        int content_length = atoi(content_length_buff);
-
-        char resp_body_buf[1<<16]; // WHY DOESN'T CONTENT LENGTH WORK HERE
-        int read_len = 0;
-        do{
-            read_len = Rio_readlineb(&rio_response, buf, MAXLINE);
-            sprintf(resp_body_buf,"%s%s",resp_body_buf, buf);
-        }while(read_len!=0);
-
-
-        char complete_response[1<<16]; // WHY DOESN'T CONTENT LENGTH WORK HERE
-        sprintf(complete_response,"%s%s",response_hdrs_buf,resp_body_buf);
-
-
-
-
-
-
+        /* Extract content length from response to determine if it should be cached*/
+        char* c_index = strstr(response, "Content");
+        char content_len[MAXLINE];
+        sscanf(c_index,"%*[^:]:%s", content_len);
 
 
         // CACHING TO DO
+        if(!is_dynamic && atoi(content_len) < MAX_OBJECT_SIZE)
+            ;
+
 
         //Forward the response to the client
-        Rio_writen(connfd, complete_response, sizeof(complete_response));
+        Rio_writen(connfd, response, sizeof(response));
         Close(clientfd);
     }
-
-    //response_size = Rio_readn(clientfd, response, sizeof(response));
-
 }
 
 
@@ -196,7 +160,6 @@ void parse_uri(char *uri, struct req_content *content, bool* is_dynamic)
 
 }
 
-
 /*  read_requesthdrs - read HTTP request headers, return whether or not host was present in headers */
 bool read_requesthdrs(rio_t *rp, char *header_buf)
 {
@@ -226,7 +189,6 @@ bool read_requesthdrs(rio_t *rp, char *header_buf)
     return host_header_present;
 
 }
-
 
 /* clienterror - returns an error message to the client */
 void clienterror(int fd, char *cause, char *errnum,

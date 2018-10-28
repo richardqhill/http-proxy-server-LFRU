@@ -6,7 +6,12 @@
       <w>clientfd</w>
       <w>clientlen</w>
       <w>connfd</w>
+      <w>errnum</w>
       <w>listenfd</w>
+      <w>longmsg</w>
+      <w>requesthdrs</w>
+      <w>shortmsg</w>
+      <w>struct</w>
     </words>
   </dictionary>
 </component>
