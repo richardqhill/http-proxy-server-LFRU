@@ -34,9 +34,11 @@ pthread_rwlock_t cache_start_rwlock; /* Lock to synchronise the adding of new bl
 void doit(int connfd);
 void parse_uri(char *uri, struct uri_content *content, bool* is_dynamic);
 bool read_requesthdrs(rio_t *rp, char *header_buf);
+
 cache_object *check_cache_hit(char *uri);
 void read_cache_data(cache_object *cp, char *response);
-void write_to_cache(char *tag, char *data, int size);
+void write_to_cache(char *uri, char *data, int size);
+
 void thread_wrapper(void *vargs);
 void sig_handler(int sig);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
@@ -83,7 +85,7 @@ int main(int argc, char **argv)
 void doit(int connfd) {
 
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
-    char hdr_data[MAXLINE], new_request[MAXBUF], response[1<<16]; /*Is there a max response size? */
+    char hdr_data[MAXLINE], new_request[MAXBUF], response[1<<18]; /*Is there a max response size? */
     rio_t rio;
     struct uri_content content;
     int clientfd;
@@ -136,7 +138,7 @@ void doit(int connfd) {
         Rio_writen(clientfd, new_request, sizeof(new_request));
 
         /* Read response from server */
-        Rio_readn(clientfd, response, sizeof(response));
+        int response_size = Rio_readn(clientfd, response, sizeof(response));
 
         /* Extract content length from response to determine if it should be cached*/
         char* c_index = strstr(response, "Content");
@@ -147,6 +149,7 @@ void doit(int connfd) {
         // CACHING TO DO
         if(!is_dynamic && atoi(content_len) < MAX_OBJECT_SIZE)
             ;
+        //write_to_cache(uri, response, response_size);
 
 
         //Forward the response to the client
@@ -216,6 +219,17 @@ bool read_requesthdrs(rio_t *rp, char *header_buf)
 
 }
 
+void write_to_cache(char *uri, char *data, int size){
+
+    if(size > MAX_OBJECT_SIZE)
+        return;
+
+    //Cache is not full - Add a new block without eviction
+    if(cache_size + size <= MAX_CACHE_SIZE) {
+
+    }
+
+}
 
 /* Thread-handler that calls the required functions to serve the requests. */
 void thread_wrapper(void *vargs) {

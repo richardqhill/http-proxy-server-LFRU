@@ -49,7 +49,7 @@ function download_proxy {
     cd $1
     curl --max-time ${TIMEOUT} --silent --proxy $4 --output $2 $3
     (( $? == 28 )) && echo "Error: Fetch timed out after ${TIMEOUT} seconds"
-    cd $HOME_DIR
+    cd ..
 }
 
 #
@@ -60,7 +60,7 @@ function download_noproxy {
     cd $1
     curl --max-time ${TIMEOUT} --silent --output $2 $3 
     (( $? == 28 )) && echo "Error: Fetch timed out after ${TIMEOUT} seconds"
-    cd $HOME_DIR
+    cd ..
 }
 
 #
@@ -210,7 +210,7 @@ echo "Starting tiny on ${tiny_port}"
 cd ./tiny
 ./tiny ${tiny_port}   &
 tiny_pid=$!
-cd ${HOME_DIR}
+cd ..
 
 # Wait for tiny to start in earnest
 wait_for_port_use "${tiny_port}"
@@ -350,7 +350,7 @@ echo "Starting tiny on port ${tiny_port}"
 cd ./tiny
 ./tiny ${tiny_port} &> /dev/null &
 tiny_pid=$!
-cd ${HOME_DIR}
+cd ..
 
 # Wait for tiny to start in earnest
 wait_for_port_use "${tiny_port}"
