@@ -37,7 +37,6 @@ typedef struct cache_object {
 }cache_object;
 
 int LFU_cache_count, LFU_cache_size, LRU_cache_size = 0;
-// int timer = 0;
 count_node* clist_head;
 cache_object *LRU_cache_start; /* Head pointer for cache list */
 cache_object *LFU_cache_start; /* Head pointer for cache list */
@@ -82,7 +81,6 @@ int main(int argc, char **argv){
 
     /* Initialize head of count list */
     clist_head = (count_node*) malloc(sizeof(count_node));
-    pthread_rwlock_init(&(clist_head->rwlock), NULL);
 
     LRU_cache_start = (cache_object*) malloc(sizeof(cache_object));
     LFU_cache_start = (cache_object*) malloc(sizeof(cache_object));
@@ -111,14 +109,10 @@ void doit(int connfd) {
 
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE], hdr_data[MAXLINE], new_request[MAXBUF];
     char response[380000]; /* Large enough to handle beeg 354kb without causing EXC_BAD_ACCESS */
-
     rio_t rio;
     struct uri_content content;
     int clientfd;
     bool is_dynamic, host_hdr_recvd;
-
-    /* Increment timer with every request for cache purposes */
-    //timer++;
 
     /* Read request line and headers */
     Rio_readinitb(&rio, connfd);
@@ -155,7 +149,6 @@ void doit(int connfd) {
 
         int response_len = strlen(search->data);
         strncpy(response, search->data, response_len);
-
         Rio_writen(connfd, response, response_len);
 
         pthread_rwlock_unlock(&search->rwlock);
