@@ -1,7 +1,3 @@
-//
-// Created by Richard Hill on 10/29/18.
-//
-
 #ifndef HW2_HANDOUT_PROXY_H
 #define HW2_HANDOUT_PROXY_H
 
@@ -29,25 +25,21 @@ struct uri_content {
 typedef struct count_node {
     int count;
     char uri[MAXLINE];
-    //pthread_rwlock_t rwlock;
     struct count_node* next;
 }count_node;
 
 typedef struct cache_object {
     char uri[MAXLINE];
     char* data;
-
-    //pthread_rwlock_t rwlock;
     struct cache_object *next;
-
 }cache_object;
 
 void doit(int connfd);
-void parse_uri(char *uri, struct uri_content *content, bool* is_dynamic);
+bool parse_uri(char *uri, struct uri_content *content);
 bool read_requesthdrs(rio_t *rp, char *header_buf);
 
-void write_to_cache(char *uri, char *data, int size);
 cache_object *check_cache_hit(char *uri);
+void write_to_cache(char *uri, char *data, int size);
 void cache_insert_at_end(cache_object *cp, char *uri, char *data, int size);
 cache_object* LFU_cache_update_needed();
 void evict_oldest_from_LRU();
@@ -59,8 +51,5 @@ void update_current_top_three(count_node* head);
 void thread_wrapper(void *vargs);
 void sig_handler(int sig);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
-
-
-
 
 #endif //HW2_HANDOUT_PROXY_H

@@ -5,10 +5,12 @@
       <w>clienterror</w>
       <w>clientfd</w>
       <w>clientlen</w>
+      <w>clist</w>
       <w>connfd</w>
       <w>errnum</w>
       <w>listenfd</w>
       <w>longmsg</w>
+      <w>recvd</w>
       <w>requesthdrs</w>
       <w>shortmsg</w>
       <w>struct</w>
