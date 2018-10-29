@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdbool.h>
-#include <limits.h>
+#include <string.h>
 #include "csapp.h"
 
 /* Recommended max cache and object sizes */
@@ -19,33 +19,57 @@ struct uri_content {
     char port[MAXLINE];
 };
 
+typedef struct count_node {
+    int count;
+    char uri[MAXLINE];
+    pthread_rwlock_t rwlock;
+    struct count_node* next;
+}count_node;
+
 typedef struct cache_object {
     char uri[MAXLINE];
-    char data[MAX_OBJECT_SIZE];
-    int timestamp; //necessary?
+    char* data;
+
+    //int timestamp; //necessary?
     pthread_rwlock_t rwlock;
     struct cache_object *next;
+
 }cache_object;
 
-int cache_size = 0, timer = 0;
-cache_object *cache_start; /* Head pointer for cache list */
-pthread_rwlock_t cache_start_rwlock; /* Lock to synchronise the adding of new blocks to the cache */
+int LFU_cache_count, LFU_cache_size, LRU_cache_size = 0;
+// int timer = 0;
+count_node* clist_head;
+cache_object *LRU_cache_start; /* Head pointer for cache list */
+cache_object *LFU_cache_start; /* Head pointer for cache list */
+pthread_rwlock_t rwlock; /* Lock to synchronise the adding of new nodes */
+
+char current_uri1[MAXLINE], current_uri2[MAXLINE], current_uri3[MAXLINE];
+char previous_uri1[MAXLINE], previous_uri2[MAXLINE], previous_uri3[MAXLINE];
 
 void doit(int connfd);
 void parse_uri(char *uri, struct uri_content *content, bool* is_dynamic);
 bool read_requesthdrs(rio_t *rp, char *header_buf);
 
+void write_to_cache(char *uri, char *data, int size);
+cache_object* LFU_cache_update_needed();
 cache_object *check_cache_hit(char *uri);
 void read_cache_data(cache_object *cp, char *response);
-void write_to_cache(char *uri, char *data, int size);
+void cache_insert_at_end(cache_object *cp, char *uri, char *data, int size);
 
+void count_insert_at_end(count_node *head, char *uri);
+count_node* find_count_node(count_node* head, char* uri);
+void update_current_top_three(count_node* head);
 void thread_wrapper(void *vargs);
 void sig_handler(int sig);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
 
+void stupidFunction(cache_object* newNode){
 
-int main(int argc, char **argv)
-{
+    printf("%s\n",newNode->uri);
+}
+
+int main(int argc, char **argv){
+
     Signal(SIGPIPE, sig_handler); // Ignore SIGPIPE
 
     int listenfd;
@@ -54,12 +78,17 @@ int main(int argc, char **argv)
     socklen_t clientlen;
     struct sockaddr_storage clientaddr;
     clientlen = sizeof(clientaddr);
-
     pthread_t tid;
-    cache_start = NULL;
 
-    //Initialize lock for cache_start to maintain thread-safe operation
-    pthread_rwlock_init(&(cache_start_rwlock), NULL);
+    /* Initialize locks to maintain thread-safe operation */
+    pthread_rwlock_init(&(rwlock), NULL);
+
+    /* Initialize head of count list */
+    clist_head = (count_node*) malloc(sizeof(count_node));
+    pthread_rwlock_init(&(clist_head->rwlock), NULL);
+
+    LRU_cache_start = (cache_object*) malloc(sizeof(cache_object));
+    LFU_cache_start = (cache_object*) malloc(sizeof(cache_object));
 
     /* Check command line args */
     if (argc != 2) {
@@ -77,12 +106,9 @@ int main(int argc, char **argv)
 
         Pthread_create(&tid, NULL, (void *)thread_wrapper, connfd);
 
-        //doit(*connfd);
-        //close(*connfd);
     }
     return 0;
 }
-
 
 void doit(int connfd) {
 
@@ -95,7 +121,7 @@ void doit(int connfd) {
     bool is_dynamic, host_hdr_recvd;
 
     /* Increment timer with every request for cache purposes */
-    timer++;
+    //timer++;
 
     /* Read request line and headers */
     Rio_readinitb(&rio, connfd);
@@ -113,12 +139,32 @@ void doit(int connfd) {
     /* Parse URI: update dynamic flag and extract hostname, path and port into content struct */
     parse_uri(uri, &content, &is_dynamic);
 
-    /* Check if URI is in cache */
-    if (!is_dynamic && 0){                                      //IMPLEMENT THIS!! :)
+    /* Update counts to help maintain LFU cache. Ignore dynamic content since that should not be cached */
+    if(!is_dynamic) {
+        count_node *search_result;
+        search_result = find_count_node(clist_head, uri);
+        if (search_result == NULL) {
+            count_insert_at_end(clist_head, uri);
+        }
+    }
 
+    count_node* debug = clist_head; // used for debugging global var head
 
-        ;
+    /* Check if URI is in LFU or LRU cache. If so, serve cache from response */
+    pthread_rwlock_wrlock(&rwlock);
+    cache_object* search = check_cache_hit(uri);
+    pthread_rwlock_unlock(&rwlock);
 
+    if (!is_dynamic && search != NULL){
+
+        pthread_rwlock_wrlock(&search->rwlock);
+
+        int response_len = strlen(search->data);
+        strncpy(response, search->data, response_len);
+
+        Rio_writen(connfd, response, response_len);
+
+        pthread_rwlock_unlock(&search->rwlock);
 
     }
     else{ /* If not in cache, get resource from host server */
@@ -144,27 +190,22 @@ void doit(int connfd) {
         int response_size = Rio_readn(clientfd, response, sizeof(response));
 
         /* Extract content length from response to determine if it should be cached*/
-        char* c_index = strstr(response, "Content");
+        char* c_index = strstr(response, "Content-");
         char content_len[MAXLINE];
         sscanf(c_index,"%*[^:]:%s", content_len);
 
-
-        // CACHING TO DO
         if(!is_dynamic && atoi(content_len) < MAX_OBJECT_SIZE)
-            ;
-        //write_to_cache(uri, response, response_size);
-
+            write_to_cache(uri, response, response_size);
 
         //Forward the response to the client
-        Rio_writen(connfd, response, sizeof(response)); //throws warning because we don't actually write this much
+        Rio_writen(connfd, response, response_size);
         Close(clientfd);
     }
 }
 
-
 /*  parse_uri - read HTTP request headers */
-void parse_uri(char *uri, struct uri_content *content, bool* is_dynamic)
-{
+void parse_uri(char *uri, struct uri_content *content, bool* is_dynamic){
+
     /* If requested resource is in the "cgi-bin" directory, then content is dynamic */
     if(strstr(uri, "cgi-bin"))
         *is_dynamic = true;
@@ -192,15 +233,15 @@ void parse_uri(char *uri, struct uri_content *content, bool* is_dynamic)
 }
 
 /*  read_requesthdrs - read HTTP request headers, return whether or not host was present in headers */
-bool read_requesthdrs(rio_t *rp, char *header_buf)
-{
+bool read_requesthdrs(rio_t *rp, char *header_buf){
+
     char buf[MAXLINE];
     bool host_header_present = false;
 
     do {
         Rio_readlineb(rp, buf, MAXLINE);
 
-        if(!strcmp(buf, "\r\n"))
+        if(strcmp(buf, "\r\n") == 0)
             continue;
 
         /* Ignore these headers, we will substitute our own (defined at top of file) */
@@ -216,7 +257,7 @@ bool read_requesthdrs(rio_t *rp, char *header_buf)
         /* Proxy will pass along any additional request headers unchanged */
         sprintf(header_buf, "%s%s", header_buf, buf);
 
-    }while(strcmp(buf, "\r\n"));
+    }while(strcmp(buf, "\r\n") != 0);
     return host_header_present;
 
 }
@@ -226,12 +267,243 @@ void write_to_cache(char *uri, char *data, int size){
     if(size > MAX_OBJECT_SIZE)
         return;
 
-    //Cache is not full - Add a new block without eviction
-    if(cache_size + size <= MAX_CACHE_SIZE) {
-        ;
+    pthread_rwlock_wrlock(&rwlock);
+    update_current_top_three(clist_head);
+
+    char* debugcurrent1 = &current_uri1;
+    char* debugcurrent2 = &current_uri2;
+    char* debugcurrent3 = &current_uri3;
+    char* debugprev1 = &previous_uri1;
+    char* debugprev2 = &previous_uri2;
+    char* debugprev3 = &previous_uri3;
+    cache_object* LFU_debug = LFU_cache_start;
+    int LFU_cache_size_debug = LFU_cache_count;
+    cache_object* LRU_debug = LRU_cache_start;
+    int LRU_cache_size_debug = LRU_cache_size;
+
+    /* If LFU cache size < 3, insert object into LFU cache */
+    if(LFU_cache_count < 3) {
+        cache_insert_at_end(LFU_cache_start, uri, data, size);
+    }
+    else{
+        /* If top 3 have changed, overwrite the "victim" that fell off with the object */
+        cache_object* victim = LFU_cache_update_needed();
+        if(victim != NULL){
+            pthread_rwlock_wrlock(&victim->rwlock);
+            strcpy(victim->uri,uri);
+            LFU_cache_size -= strlen(victim->data);
+            free(victim->data);
+            victim->data = malloc(size);
+            strcpy(victim->data, data);
+            LFU_cache_size += size;
+            pthread_rwlock_unlock(&victim->rwlock);
+        }
+
+        // instead of count, we should be checking cache size? MAX_CACHE_SIZE
+
+        /* If LRU cache size < 997, insert object into LRU cache */
+        else if(LRU_cache_size < 997) {
+            cache_insert_at_end(LRU_cache_start, uri, data, size);
+            LRU_cache_size++;
+            return;
+        }
+
+        //Determine if LRU cache needs eviction
+
+        //Cache is not full - Add a new block without eviction
+        else if( size <= MAX_CACHE_SIZE) {
+            ;
+        }
     }
 
+
+    strcpy(previous_uri1, current_uri1);
+    strcpy(previous_uri2, current_uri2);
+    strcpy(previous_uri3, current_uri3);
+
+    pthread_rwlock_unlock(&rwlock);
 }
+
+void cache_insert_at_end(cache_object *cp, char *uri, char *data, int size){
+
+    pthread_rwlock_wrlock(&rwlock);
+
+    cache_object* iterator = cp;
+    while(iterator->next != NULL){
+        iterator = iterator->next;
+    }
+
+    cache_object* newNode = (cache_object*) malloc(sizeof(cache_object));
+    iterator->next = newNode;
+    strcpy(newNode->uri, uri);
+    newNode->data = malloc(size);
+
+    strcpy(newNode->data, data);
+    pthread_rwlock_init(&(newNode->rwlock), NULL);
+
+    // Adjust global cache size variables
+    if(cp == LFU_cache_start){
+        LFU_cache_size += size;
+        LFU_cache_count++;
+    }
+    else if(cp == LRU_cache_start){
+        LRU_cache_size += size;
+    }
+
+    pthread_rwlock_unlock(&rwlock);
+}
+
+
+cache_object* LFU_cache_update_needed(){
+
+    char* debugcurrent1 = &current_uri1;
+    char* debugcurrent2 = &current_uri2;
+    char* debugcurrent3 = &current_uri3;
+    char* debugprev1 = &previous_uri1;
+    char* debugprev2 = &previous_uri2;
+    char* debugprev3 = &previous_uri3;
+
+    char* victim = NULL;
+
+    if(strcmp(&previous_uri1, &current_uri1)!=0 && strcmp(&previous_uri1, &current_uri2)!=0
+    && strcmp(&previous_uri1, &current_uri3!=0)){
+        victim = previous_uri1;
+    }
+
+    else if(strcmp(&previous_uri2, &current_uri1)!=0 && strcmp(&previous_uri2, &current_uri2)!=0
+    && strcmp(&previous_uri2,&current_uri3!=0)){
+        victim = previous_uri2;
+    }
+
+    /*
+    else if(strcmp(&previous_uri3, &current_uri1)!=0 && strcmp(&previous_uri3, &current_uri2)!=0
+            && strcmp(&previous_uri3,&current_uri3!=0)){
+        victim = previous_uri3;
+    }*/
+
+    if(victim == NULL)
+        return NULL;
+    else
+        return check_cache_hit(victim);
+}
+
+
+
+
+
+
+cache_object* check_cache_hit(char *uri){
+
+    cache_object* iterator = LFU_cache_start;
+    while(iterator != NULL){
+        pthread_rwlock_wrlock(&iterator->rwlock);
+
+        if(strcmp(iterator->uri, uri) == 0){
+            pthread_rwlock_unlock(&iterator->rwlock);
+            return iterator;
+        }
+        pthread_rwlock_unlock(&iterator->rwlock);
+        iterator = iterator->next;
+    }
+
+    iterator = LRU_cache_start;
+    while(iterator != NULL){
+        pthread_rwlock_wrlock(&iterator->rwlock);
+
+        if(strcmp(iterator->uri, uri) == 0){
+            pthread_rwlock_unlock(&iterator->rwlock);
+            return iterator;
+        }
+        pthread_rwlock_unlock(&iterator->rwlock);
+        iterator = iterator->next;
+    }
+
+    return NULL;
+}
+
+
+
+void count_insert_at_end(count_node *head, char *uri){
+
+    //pthread_rwlock_wrlock(&rwlock);
+
+    count_node* iterator = head;
+    while(iterator->next != NULL){
+        iterator = iterator->next;
+    }
+    count_node* insert = (count_node*) malloc(sizeof(count_node));
+    insert->count = 1;
+    strcpy(insert->uri, uri);
+    iterator->next = insert;
+    pthread_rwlock_init(&(insert->rwlock), NULL);
+
+    //pthread_rwlock_unlock(&rwlock);
+}
+
+count_node* find_count_node(count_node* head, char* uri){
+
+    //pthread_rwlock_wrlock(&rwlock);
+
+    count_node* iterator = head;
+    while(iterator != NULL){
+        if(!strcmp(iterator->uri,uri)) {
+            pthread_rwlock_wrlock(&iterator->rwlock);
+            iterator->count++;  /* If found, increment count */
+            pthread_rwlock_unlock(&iterator->rwlock);
+            return iterator;
+        }
+        else
+            iterator = iterator->next;
+    }
+    //pthread_rwlock_unlock(&rwlock);
+    return NULL;
+}
+
+void update_current_top_three(count_node* head){
+
+    int count1, count2, count3 = 0;
+    char uri1[MAXLINE], uri2[MAXLINE], uri3[MAXLINE];
+
+    count_node* iterator = head;
+    while(iterator != NULL){
+        //pthread_rwlock_wrlock(&iterator->rwlock);
+        if(iterator->count > count1){
+            count1 = iterator->count;
+            strcpy(uri1, iterator->uri);
+        }
+        //pthread_rwlock_unlock(&iterator->rwlock);
+        iterator = iterator->next;
+    }
+
+    iterator = head;
+    while(iterator != NULL){
+        //pthread_rwlock_wrlock(&iterator->rwlock);
+        if(iterator->count > count2 && strcmp(iterator->uri,uri1)){
+            count2 = iterator->count;
+            strcpy(uri2 ,iterator->uri);
+        }
+        //pthread_rwlock_unlock(&iterator->rwlock);
+        iterator = iterator->next;
+    }
+
+    iterator = head;
+    while(iterator != NULL){
+        //pthread_rwlock_wrlock(&iterator->rwlock);
+        if(iterator->count > count3 && strcmp(iterator->uri,uri1) && strcmp(iterator->uri,uri2)){
+            count3 = iterator->count;
+            strcpy(uri3, iterator->uri);
+        }
+        //pthread_rwlock_unlock(&iterator->rwlock);
+        iterator = iterator->next;
+    }
+
+    strcpy(current_uri1, uri1);
+    strcpy(current_uri2, uri2);
+    strcpy(current_uri3, uri3);
+
+}
+
+
 
 /* Thread-handler that calls the required functions to serve the requests. */
 void thread_wrapper(void *vargs) {
@@ -244,7 +516,7 @@ void thread_wrapper(void *vargs) {
 }
 
 void sig_handler(int sig) {
-    printf("SIGPIPE signal trapped. Exiting thread.");
+    printf("SIGPIPE signal trapped. Exiting thread.\n");
     Pthread_exit(NULL);
 }
 
