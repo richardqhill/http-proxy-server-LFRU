@@ -47,15 +47,15 @@ void parse_uri(char *uri, struct uri_content *content, bool* is_dynamic);
 bool read_requesthdrs(rio_t *rp, char *header_buf);
 
 void write_to_cache(char *uri, char *data, int size);
-cache_object* LFU_cache_update_needed();
 cache_object *check_cache_hit(char *uri);
-void read_cache_data(cache_object *cp, char *response);
 void cache_insert_at_end(cache_object *cp, char *uri, char *data, int size);
+cache_object* LFU_cache_update_needed();
 void evict_oldest_from_LRU();
 
 void count_insert_at_end(count_node *head, char *uri);
 count_node* find_count_node(count_node* head, char* uri);
 void update_current_top_three(count_node* head);
+
 void thread_wrapper(void *vargs);
 void sig_handler(int sig);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
