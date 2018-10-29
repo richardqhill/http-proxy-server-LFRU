@@ -41,7 +41,8 @@ int LFU_cache_count, LFU_cache_size, LRU_cache_size = 0;
 count_node* clist_head;
 cache_object *LRU_cache_start; /* Head pointer for cache list */
 cache_object *LFU_cache_start; /* Head pointer for cache list */
-pthread_rwlock_t rwlock; /* Lock to synchronise the adding of new nodes */
+
+//pthread_rwlock_t rwlock; /* Lock to synchronise the adding of new nodes */
 
 char current_uri1[MAXLINE], current_uri2[MAXLINE], current_uri3[MAXLINE];
 char previous_uri1[MAXLINE], previous_uri2[MAXLINE], previous_uri3[MAXLINE];
@@ -63,10 +64,6 @@ void thread_wrapper(void *vargs);
 void sig_handler(int sig);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
 
-void stupidFunction(cache_object* newNode){
-
-    printf("%s\n",newNode->uri);
-}
 
 int main(int argc, char **argv){
 
@@ -81,7 +78,7 @@ int main(int argc, char **argv){
     pthread_t tid;
 
     /* Initialize locks to maintain thread-safe operation */
-    pthread_rwlock_init(&(rwlock), NULL);
+    //pthread_rwlock_init(&(rwlock), NULL);
 
     /* Initialize head of count list */
     clist_head = (count_node*) malloc(sizeof(count_node));
@@ -151,10 +148,7 @@ void doit(int connfd) {
     count_node* debug = clist_head; // used for debugging global var head
 
     /* Check if URI is in LFU or LRU cache. If so, serve cache from response */
-    pthread_rwlock_wrlock(&rwlock);
     cache_object* search = check_cache_hit(uri);
-    pthread_rwlock_unlock(&rwlock);
-
     if (!is_dynamic && search != NULL){
 
         pthread_rwlock_wrlock(&search->rwlock);
@@ -165,7 +159,6 @@ void doit(int connfd) {
         Rio_writen(connfd, response, response_len);
 
         pthread_rwlock_unlock(&search->rwlock);
-
     }
     else{ /* If not in cache, get resource from host server */
 
@@ -267,7 +260,7 @@ void write_to_cache(char *uri, char *data, int size){
     if(size > MAX_OBJECT_SIZE)
         return;
 
-    pthread_rwlock_wrlock(&rwlock);
+    //pthread_rwlock_wrlock(&rwlock);
     update_current_top_three(clist_head);
 
     char* debugcurrent1 = &current_uri1;
@@ -282,7 +275,7 @@ void write_to_cache(char *uri, char *data, int size){
     int LRU_cache_size_debug = LRU_cache_size;
 
     /* If LFU cache size < 3, insert object into LFU cache */
-    if(LFU_cache_count < 3) {
+    if(LFU_cache_count < 99) {
         cache_insert_at_end(LFU_cache_start, uri, data, size);
     }
     else{
@@ -321,12 +314,12 @@ void write_to_cache(char *uri, char *data, int size){
     strcpy(previous_uri2, current_uri2);
     strcpy(previous_uri3, current_uri3);
 
-    pthread_rwlock_unlock(&rwlock);
+    //pthread_rwlock_unlock(&rwlock);
 }
 
 void cache_insert_at_end(cache_object *cp, char *uri, char *data, int size){
 
-    pthread_rwlock_wrlock(&rwlock);
+    //pthread_rwlock_wrlock(&rwlock);
 
     cache_object* iterator = cp;
     while(iterator->next != NULL){
@@ -350,7 +343,7 @@ void cache_insert_at_end(cache_object *cp, char *uri, char *data, int size){
         LRU_cache_size += size;
     }
 
-    pthread_rwlock_unlock(&rwlock);
+    //pthread_rwlock_unlock(&rwlock);
 }
 
 
@@ -365,21 +358,18 @@ cache_object* LFU_cache_update_needed(){
 
     char* victim = NULL;
 
-    if(strcmp(&previous_uri1, &current_uri1)!=0 && strcmp(&previous_uri1, &current_uri2)!=0
-    && strcmp(&previous_uri1, &current_uri3!=0)){
+    if( strcmp(&previous_uri1,&current_uri1)!=0 && strcmp(&previous_uri1,&current_uri2)!=0
+                                                 && strcmp(&previous_uri1,&current_uri3!=0)){
         victim = previous_uri1;
     }
 
-    else if(strcmp(&previous_uri2, &current_uri1)!=0 && strcmp(&previous_uri2, &current_uri2)!=0
-    && strcmp(&previous_uri2,&current_uri3!=0)){
+    else if( strcmp(&previous_uri2,&current_uri1)!=0 && strcmp(&previous_uri2,&current_uri2)!=0 && strcmp(&previous_uri2,&current_uri3!=0)){
         victim = previous_uri2;
     }
 
-    /*
-    else if(strcmp(&previous_uri3, &current_uri1)!=0 && strcmp(&previous_uri3, &current_uri2)!=0
-            && strcmp(&previous_uri3,&current_uri3!=0)){
+    else if( strcmp(&previous_uri3,&current_uri1)!=0 && strcmp(&previous_uri3,&current_uri2)!=0 && strcmp(&previous_uri3,&current_uri3!=0)){
         victim = previous_uri3;
-    }*/
+    }
 
     if(victim == NULL)
         return NULL;
@@ -466,34 +456,34 @@ void update_current_top_three(count_node* head){
 
     count_node* iterator = head;
     while(iterator != NULL){
-        //pthread_rwlock_wrlock(&iterator->rwlock);
+        pthread_rwlock_wrlock(&iterator->rwlock);
         if(iterator->count > count1){
             count1 = iterator->count;
             strcpy(uri1, iterator->uri);
         }
-        //pthread_rwlock_unlock(&iterator->rwlock);
+        pthread_rwlock_unlock(&iterator->rwlock);
         iterator = iterator->next;
     }
 
     iterator = head;
     while(iterator != NULL){
-        //pthread_rwlock_wrlock(&iterator->rwlock);
+        pthread_rwlock_wrlock(&iterator->rwlock);
         if(iterator->count > count2 && strcmp(iterator->uri,uri1)){
             count2 = iterator->count;
             strcpy(uri2 ,iterator->uri);
         }
-        //pthread_rwlock_unlock(&iterator->rwlock);
+        pthread_rwlock_unlock(&iterator->rwlock);
         iterator = iterator->next;
     }
 
     iterator = head;
     while(iterator != NULL){
-        //pthread_rwlock_wrlock(&iterator->rwlock);
+        pthread_rwlock_wrlock(&iterator->rwlock);
         if(iterator->count > count3 && strcmp(iterator->uri,uri1) && strcmp(iterator->uri,uri2)){
             count3 = iterator->count;
             strcpy(uri3, iterator->uri);
         }
-        //pthread_rwlock_unlock(&iterator->rwlock);
+        pthread_rwlock_unlock(&iterator->rwlock);
         iterator = iterator->next;
     }
 
