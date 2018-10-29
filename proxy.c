@@ -87,7 +87,7 @@ void doit(int connfd) {
     }
 
     /* Check if URI is in LFU or LRU cache. If so, serve cache from response */
-    cache_object* search = check_cache_hit(uri);
+    cache_object* search = search_caches(uri);
     if (!is_dynamic && search != NULL){
 
         int response_len = strlen(search->data);
@@ -207,7 +207,7 @@ bool read_requesthdrs(rio_t *rp, char *header_buf){
 }
 
 /* See if given URI is in LFU or LRU cache. Return pointer to cache object if present */
-cache_object* check_cache_hit(char *uri){
+cache_object* search_caches(char *uri){
 
     pthread_rwlock_wrlock(&rwlock);
 
@@ -261,7 +261,7 @@ void write_to_cache(char *uri, char *data, int size){
     int LRU_cache_size_debug = LRU_cache_size;
 
     /* If LFU cache size < 3, insert object into LFU cache */
-    if(LFU_cache_count < 90) {
+    if(LFU_cache_count < 3) {
         cache_insert_at_end(LFU_cache_start, uri, data, size);
     }
     else{
@@ -347,7 +347,7 @@ cache_object* LFU_cache_update_needed(){
     }
     else {
         pthread_rwlock_unlock(&rwlock);
-        return check_cache_hit(victim);
+        return search_caches(victim);
     }
 }
 

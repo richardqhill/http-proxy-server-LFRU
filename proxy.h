@@ -38,7 +38,7 @@ void doit(int connfd);
 bool parse_uri(char *uri, struct uri_content *content);
 bool read_requesthdrs(rio_t *rp, char *header_buf);
 
-cache_object *check_cache_hit(char *uri);
+cache_object *search_caches(char *uri);
 void write_to_cache(char *uri, char *data, int size);
 void cache_insert_at_end(cache_object *cp, char *uri, char *data, int size);
 cache_object* LFU_cache_update_needed();
