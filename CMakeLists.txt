@@ -11,6 +11,7 @@ set(SOURCE_FILES
         csapp.h
         csapp.c
         proxy.c
+        proxy.h
         )
 
 add_executable(Proxy proxy.c csapp.c proxy.h)

@@ -51,6 +51,7 @@ cache_object* LFU_cache_update_needed();
 cache_object *check_cache_hit(char *uri);
 void read_cache_data(cache_object *cp, char *response);
 void cache_insert_at_end(cache_object *cp, char *uri, char *data, int size);
+void evict_oldest_from_LRU();
 
 void count_insert_at_end(count_node *head, char *uri);
 count_node* find_count_node(count_node* head, char* uri);

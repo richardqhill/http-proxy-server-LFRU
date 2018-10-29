@@ -16,7 +16,7 @@ csapp.o: csapp.c csapp.h
 proxy.o: proxy.c csapp.h proxy.h
 	$(CC) $(CFLAGS) -c proxy.c
 
-proxy: proxy.o csapp.o
+proxy: proxy.o csapp.o proxy.h
 	$(CC) $(CFLAGS) proxy.o csapp.o -o proxy $(LDFLAGS)
 
 # Creates a tarball in ../hw2-handin.tar that you can then

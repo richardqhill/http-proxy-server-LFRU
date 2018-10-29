@@ -92,13 +92,24 @@ void doit(int connfd) {
     cache_object* search = check_cache_hit(uri);
     if (!is_dynamic && search != NULL){
 
-        //pthread_rwlock_wrlock(&search->rwlock);
+        pthread_rwlock_wrlock(&rwlock);
 
         int response_len = strlen(search->data);
         strncpy(response, search->data, response_len);
         Rio_writen(connfd, response, response_len);
 
-        //pthread_rwlock_unlock(&search->rwlock);
+        update_current_top_three(clist_head);
+        cache_object* victim = LFU_cache_update_needed();
+        if(victim != NULL){
+            strcpy(victim->uri,uri);
+            LFU_cache_size -= strlen(victim->data);
+            free(victim->data);
+            victim->data = malloc(response_len);
+            strcpy(victim->data, response);
+            LFU_cache_size += response_len;
+        }
+
+        pthread_rwlock_unlock(&rwlock);
     }
     else{ /* If not in cache, get resource from host server */
 
@@ -201,7 +212,6 @@ void write_to_cache(char *uri, char *data, int size){
 
     pthread_rwlock_wrlock(&rwlock);
 
-
     update_current_top_three(clist_head);
 
     char* debugcurrent1 = &current_uri1;
@@ -217,7 +227,6 @@ void write_to_cache(char *uri, char *data, int size){
 
     /* If LFU cache size < 3, insert object into LFU cache */
     if(LFU_cache_count < 997) {
-        ;
         cache_insert_at_end(LFU_cache_start, uri, data, size);
     }
     else{
@@ -233,29 +242,32 @@ void write_to_cache(char *uri, char *data, int size){
             LFU_cache_size += size;
             //pthread_rwlock_unlock(&victim->rwlock);
         }
+        else{ /* Top 3 have not changed, write to LRU */
 
-        // instead of count, we should be checking cache size? MAX_CACHE_SIZE
-
-        /* If LRU cache size < 997, insert object into LRU cache */
-        else if(LRU_cache_size < 997) {
+            while(LRU_cache_size + LFU_cache_size + size > 300000){  //DEBUGGING!!!!
+            //while(LRU_cache_size + LFU_cache_size + size > MAX_CACHE_SIZE){
+                evict_oldest_from_LRU();
+            }
             cache_insert_at_end(LRU_cache_start, uri, data, size);
-            LRU_cache_size++;
-
-        }
-
-        //Determine if LRU cache needs eviction
-
-        //Cache is not full - Add a new block without eviction
-        else if( size <= MAX_CACHE_SIZE) {
-            ;
         }
     }
-
 
     strcpy(previous_uri1, current_uri1);
     strcpy(previous_uri2, current_uri2);
     strcpy(previous_uri3, current_uri3);
+    pthread_rwlock_unlock(&rwlock);
+}
 
+/* Remove the first node after LRU head (oldest node) */
+void evict_oldest_from_LRU(){
+
+    pthread_rwlock_wrlock(&rwlock);
+
+    cache_object* victim = LRU_cache_start->next;
+    LFU_cache_size -= strlen(victim->data);
+    free(victim->data);
+
+    LRU_cache_start->next = LRU_cache_start->next->next;
 
     pthread_rwlock_unlock(&rwlock);
 }
@@ -274,6 +286,7 @@ void cache_insert_at_end(cache_object *cp, char *uri, char *data, int size){
     strcpy(newNode->uri, uri);
     newNode->data = malloc(size);
     strcpy(newNode->data, data);
+    newNode->next = NULL;
     //pthread_rwlock_init(&(newNode->rwlock), NULL);
 
     //pthread_rwlock_wrlock(&iterator->rwlock);
@@ -288,13 +301,11 @@ void cache_insert_at_end(cache_object *cp, char *uri, char *data, int size){
     else if(cp == LRU_cache_start){
         LRU_cache_size += size;
     }
-
 }
 
 cache_object* LFU_cache_update_needed(){
 
     pthread_rwlock_wrlock(&rwlock);
-
 
     char* debugcurrent1 = &current_uri1;
     char* debugcurrent2 = &current_uri2;
@@ -306,19 +317,14 @@ cache_object* LFU_cache_update_needed(){
     char* victim = NULL;
 
     if( strcmp(&previous_uri1,&current_uri1)!=0 && strcmp(&previous_uri1,&current_uri2)!=0
-                                                 && strcmp(&previous_uri1,&current_uri3!=0)){
+    && strcmp(&previous_uri1,&current_uri3)!=0)
         victim = previous_uri1;
-    }
-
-    else if( strcmp(&previous_uri2,&current_uri1)!=0 && strcmp(&previous_uri2,&current_uri2)!=0 && strcmp(&previous_uri2,&current_uri3!=0)){
+    else if( strcmp(&previous_uri2,&current_uri1)!=0 && strcmp(&previous_uri2,&current_uri2)!=0
+    && strcmp(&previous_uri2,&current_uri3)!=0)
         victim = previous_uri2;
-    }
-
-    //else if( strcmp(&previous_uri3,&current_uri1)!=0 && strcmp(&previous_uri3,&current_uri2)!=0 && strcmp(&previous_uri3,&current_uri3!=0)){
-    else if( strcmp(&previous_uri3,&current_uri1)!=0 && strcmp(&previous_uri3,&current_uri2)!=0){
+    else if( strcmp(&previous_uri3,&current_uri1)!=0 && strcmp(&previous_uri3,&current_uri2)!=0
+    && strcmp(&previous_uri3,&current_uri3)!=0)
         victim = previous_uri3;
-    }
-
 
     if(victim == NULL) {
         pthread_rwlock_unlock(&rwlock);
@@ -334,6 +340,7 @@ cache_object* check_cache_hit(char *uri){
 
     pthread_rwlock_wrlock(&rwlock);
 
+    cache_object* debug = LFU_cache_start;
     cache_object* iterator = LFU_cache_start;
     while(iterator != NULL){
         //pthread_rwlock_wrlock(&iterator->rwlock);
@@ -381,6 +388,7 @@ void count_insert_at_end(count_node *head, char *uri){
     count_node* insert = (count_node*) malloc(sizeof(count_node));
     insert->count = 1;
     strcpy(insert->uri, uri);
+    insert->next = NULL;
     //pthread_rwlock_init(&(insert->rwlock), NULL);
 
     /* Unlock iterator so that we can insert node at end */
@@ -426,7 +434,7 @@ void update_current_top_three(count_node* head){
 
     count_node* debug = clist_head;
 
-    count_node* iterator = head;                     // THREADING ERRORS
+    count_node* iterator = head;
     while(iterator != NULL){
         //pthread_rwlock_wrlock(&iterator->rwlock);
         if(iterator->count > count1){
@@ -463,7 +471,6 @@ void update_current_top_three(count_node* head){
     strcpy(current_uri2, uri2);
     strcpy(current_uri3, uri3);
 }
-
 
 /* Thread-handler that calls the required functions to serve the requests. */
 void thread_wrapper(void *vargs) {
