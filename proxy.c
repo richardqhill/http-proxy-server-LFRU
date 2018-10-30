@@ -212,8 +212,6 @@ cache_object* search_caches(char *uri){
 
     pthread_rwlock_wrlock(&rwlock);
 
-    cache_object* debug = LFU_cache_start;
-
     cache_object* iterator = LFU_cache_start;
     while(iterator != NULL){
         if(strcmp(iterator->uri, uri) == 0){
@@ -230,7 +228,6 @@ cache_object* search_caches(char *uri){
 
         if(strcmp(iterator->uri, uri) == 0){
             pthread_rwlock_unlock(&rwlock);
-            int debug = iterator->data_len;
             return iterator;
         }
         cache_object* temp = iterator->next;
@@ -251,20 +248,8 @@ void write_to_cache(char *uri, char *data, int size){
 
     update_current_top_three(clist_head);
 
-    char* debugcurrent1 = &current_uri1;
-    char* debugcurrent2 = &current_uri2;
-    char* debugcurrent3 = &current_uri3;
-    char* debugprev1 = &previous_uri1;
-    char* debugprev2 = &previous_uri2;
-    char* debugprev3 = &previous_uri3;
-    cache_object* LFU_debug = LFU_cache_start;
-    cache_object* LRU_debug = LRU_cache_start;
-    int LFU_cache_count_debug = LFU_cache_count;
-    int LFU_cache_size_debug = LFU_cache_size;
-    int LRU_cache_size_debug = LRU_cache_size;
-
     /* If LFU cache size < 3, insert object into LFU cache */
-    if(LFU_cache_count < 97) {
+    if(LFU_cache_count < 3) {
         cache_insert_at_end(LFU_cache_start, uri, data, size);
     }
     else{
@@ -279,10 +264,7 @@ void write_to_cache(char *uri, char *data, int size){
             LFU_cache_size += size;
         }
         else{ /* Top 3 have not changed, write object to LRU */
-            /* int debug_size = LRU_cache_size + LFU_cache_size + size; */
-            /* while(LRU_cache_size + LFU_cache_size + size > 69000){  // Clear LRU sooner for easier debugging */
             while(LRU_cache_size + LFU_cache_size + size > MAX_CACHE_SIZE){
-                /* int debug_size2 = LRU_cache_size + LFU_cache_size + size; */
                 evict_oldest_from_LRU();
             }
             cache_insert_at_end(LRU_cache_start, uri, data, size);
@@ -322,17 +304,9 @@ void cache_insert_at_end(cache_object *cp, char *uri, char *data, int size){
     }
 }
 
-/* If top 3 most frequent objects has changed, return pointer to object that fell out of top 3 */
+/* If top 3 most frequent objects has changed, return pointer to object that fell out of top 3
+ * This function is only called when LFU size >=3, so do not need to worry about nulls */
 cache_object* LFU_cache_update_needed(){
-
-    pthread_rwlock_wrlock(&rwlock);
-
-    char* debugcurrent1 = &current_uri1;
-    char* debugcurrent2 = &current_uri2;
-    char* debugcurrent3 = &current_uri3;
-    char* debugprev1 = &previous_uri1;
-    char* debugprev2 = &previous_uri2;
-    char* debugprev3 = &previous_uri3;
 
     char* victim = NULL;
 
@@ -347,11 +321,11 @@ cache_object* LFU_cache_update_needed(){
         victim = previous_uri3;
 
     if(victim == NULL) {
-        pthread_rwlock_unlock(&rwlock);
+
         return NULL;
     }
     else {
-        pthread_rwlock_unlock(&rwlock);
+
         return search_caches(victim);
     }
 }
