@@ -31,6 +31,7 @@ typedef struct count_node {
 typedef struct cache_object {
     char uri[MAXLINE];
     char* data;
+    int data_len;
     struct cache_object *next;
 }cache_object;
 
