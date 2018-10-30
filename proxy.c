@@ -101,11 +101,11 @@ void doit(int connfd) {
         cache_object* victim = LFU_cache_update_needed();
         if(victim != NULL){
             strcpy(victim->uri,uri);
-            LFU_cache_size -= victim->data_len;
+            LFU_cache_size -= victim->content_len;
             free(victim->data);
             victim->data = malloc(response_len);
             memcpy(victim->data, response, response_len);
-            LFU_cache_size += response_len;
+            LFU_cache_size += search->content_len;
         }
 
         pthread_rwlock_unlock(&rwlock);
@@ -139,7 +139,7 @@ void doit(int connfd) {
 
         /* Write response to cache if content is not dynamic and response size < MAX_OBJECT_SIZE */
         if(!is_dynamic && response_size <= MAX_OBJECT_SIZE) {
-            write_to_cache(uri, response, response_size);
+            write_to_cache(uri, response, response_size, atoi(content_len));
         }
 
         /* Forward the response to the client */
@@ -239,9 +239,9 @@ cache_object* search_caches(char *uri){
 }
 
 /* Write the server response into LFU or LRU cache */
-void write_to_cache(char *uri, char *data, int size){
+void write_to_cache(char *uri, char *data, int response_size, int content_len) {
 
-    if(size > MAX_OBJECT_SIZE)
+    if(response_size > MAX_OBJECT_SIZE)
         return;
 
     pthread_rwlock_wrlock(&rwlock);
@@ -250,24 +250,24 @@ void write_to_cache(char *uri, char *data, int size){
 
     /* If LFU cache size < 3, insert object into LFU cache */
     if(LFU_cache_count < 3) {
-        cache_insert_at_end(LFU_cache_start, uri, data, size);
+        cache_insert_at_end(LFU_cache_start, uri, data, response_size, content_len);
     }
     else{
         /* If top 3 have changed, overwrite the "victim" that fell off with the new object */
         cache_object* victim = LFU_cache_update_needed();
         if(victim != NULL){
             strcpy(victim->uri,uri);
-            LFU_cache_size -= victim->data_len;
+            LFU_cache_size -= victim->content_len;
             free(victim->data);
-            victim->data = malloc(size);
-            memcpy(victim->data, data, size);
-            LFU_cache_size += size;
+            victim->data = malloc(response_size);
+            memcpy(victim->data, data, response_size);
+            LFU_cache_size += content_len;
         }
         else{ /* Top 3 have not changed, write object to LRU */
-            while(LRU_cache_size + LFU_cache_size + size > MAX_CACHE_SIZE){
+            while(LRU_cache_size + LFU_cache_size + response_size > MAX_CACHE_SIZE){
                 evict_oldest_from_LRU();
             }
-            cache_insert_at_end(LRU_cache_start, uri, data, size);
+            cache_insert_at_end(LRU_cache_start, uri, data, response_size, content_len);
         }
     }
     strcpy(previous_uri1, current_uri1);
@@ -277,7 +277,7 @@ void write_to_cache(char *uri, char *data, int size){
 }
 
 /* Insert a new cache object at the end of the LFU or LRU cache. */
-void cache_insert_at_end(cache_object *cp, char *uri, char *data, int size){
+void cache_insert_at_end(cache_object *cp, char *uri, char *data, int response_size, int content_len) {
 
     cache_object* iterator = cp;
     while(iterator->next != NULL){
@@ -286,9 +286,10 @@ void cache_insert_at_end(cache_object *cp, char *uri, char *data, int size){
 
     cache_object* newNode = (cache_object*) malloc(sizeof(cache_object));
     strcpy(newNode->uri, uri);
-    newNode->data = malloc(size);
-    newNode->data_len = size;
-    memcpy(newNode->data, data, size);
+    newNode->data = malloc(response_size);
+    newNode->data_len = response_size;
+    newNode->content_len = content_len;
+    memcpy(newNode->data, data, response_size);
 
     newNode->next = NULL;
 
@@ -296,11 +297,11 @@ void cache_insert_at_end(cache_object *cp, char *uri, char *data, int size){
 
     // Adjust global cache size variables
     if(cp == LFU_cache_start){
-        LFU_cache_size += size;
+        LFU_cache_size += content_len;
         LFU_cache_count++;
     }
     else if(cp == LRU_cache_start){
-        LRU_cache_size += size;
+        LRU_cache_size += content_len;
     }
 }
 
@@ -336,7 +337,7 @@ void evict_oldest_from_LRU(){
     pthread_rwlock_wrlock(&rwlock);
 
     cache_object* victim = LRU_cache_start->next;
-    LRU_cache_size -= victim->data_len;
+    LRU_cache_size -= victim->content_len;
     free(victim->data);
     LRU_cache_start->next = LRU_cache_start->next->next;
 
