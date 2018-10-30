@@ -30,7 +30,9 @@ int main(int argc, char **argv){
     LFU_cache_start = (cache_object*) malloc(sizeof(cache_object));
 
     /* Initialize locks to maintain thread-safe operation */
-    pthread_rwlock_init(&(rwlock), NULL);
+    pthread_rwlock_init(&rwlock, NULL);
+    pthread_rwlock_init(&LRU_cache_start->rwlock, NULL);
+    pthread_rwlock_init(&LFU_cache_start->rwlock, NULL);
 
     /* Check command line args */
     if (argc != 2) {
@@ -100,12 +102,17 @@ void doit(int connfd) {
         update_current_top_three(clist_head);
         cache_object* victim = LFU_cache_update_needed();
         if(victim != NULL){
+
+            pthread_rwlock_wrlock(&victim->rwlock);
+
             strcpy(victim->uri,uri);
             LFU_cache_size -= victim->content_len;
             free(victim->data);
             victim->data = malloc(response_len);
             memcpy(victim->data, response, response_len);
             LFU_cache_size += search->content_len;
+
+            pthread_rwlock_unlock(&victim->rwlock);
         }
 
         pthread_rwlock_unlock(&rwlock);
@@ -216,7 +223,6 @@ cache_object* search_caches(char *uri){
     while(iterator != NULL){
         if(strcmp(iterator->uri, uri) == 0){
             pthread_rwlock_unlock(&rwlock);
-            int debug = iterator->data_len;
             return iterator;
         }
         cache_object* temp = iterator->next;
@@ -256,12 +262,17 @@ void write_to_cache(char *uri, char *data, int response_size, int content_len) {
         /* If top 3 have changed, overwrite the "victim" that fell off with the new object */
         cache_object* victim = LFU_cache_update_needed();
         if(victim != NULL){
+
+            pthread_rwlock_wrlock(&victim->rwlock);
+
             strcpy(victim->uri,uri);
             LFU_cache_size -= victim->content_len;
             free(victim->data);
             victim->data = malloc(response_size);
             memcpy(victim->data, data, response_size);
             LFU_cache_size += content_len;
+
+            pthread_rwlock_unlock(&victim->rwlock);
         }
         else{ /* Top 3 have not changed, write object to LRU */
             while(LRU_cache_size + LFU_cache_size + response_size > MAX_CACHE_SIZE){
@@ -281,7 +292,8 @@ void cache_insert_at_end(cache_object *cp, char *uri, char *data, int response_s
 
     cache_object* iterator = cp;
     while(iterator->next != NULL){
-        iterator = iterator->next;
+        cache_object* temp = iterator->next;
+        iterator = temp;
     }
 
     cache_object* newNode = (cache_object*) malloc(sizeof(cache_object));
@@ -290,10 +302,12 @@ void cache_insert_at_end(cache_object *cp, char *uri, char *data, int response_s
     newNode->data_len = response_size;
     newNode->content_len = content_len;
     memcpy(newNode->data, data, response_size);
-
     newNode->next = NULL;
+    pthread_rwlock_init(&(newNode->rwlock), NULL);
 
+    pthread_rwlock_wrlock(&iterator->rwlock);
     iterator->next = newNode;
+    pthread_rwlock_unlock(&iterator->rwlock);
 
     // Adjust global cache size variables
     if(cp == LFU_cache_start){
@@ -337,9 +351,14 @@ void evict_oldest_from_LRU(){
     pthread_rwlock_wrlock(&rwlock);
 
     cache_object* victim = LRU_cache_start->next;
+
+    pthread_rwlock_wrlock(&victim->rwlock);
+
     LRU_cache_size -= victim->content_len;
     free(victim->data);
     LRU_cache_start->next = LRU_cache_start->next->next;
+
+    pthread_rwlock_unlock(&victim->rwlock);
 
     pthread_rwlock_unlock(&rwlock);
 }

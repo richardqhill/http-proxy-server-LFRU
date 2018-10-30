@@ -33,6 +33,7 @@ typedef struct cache_object {
     char* data;
     int data_len;
     int content_len;
+    pthread_rwlock_t rwlock;
     struct cache_object *next;
 }cache_object;
 
