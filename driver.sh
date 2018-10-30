@@ -32,10 +32,12 @@ BASIC_LIST="home.html
 # List of text files for the cache test
 CACHE_LIST="tiny.c
             home.html
-            csapp.c"
+            csapp.c
+            tiny"
 
 # The file we will fetch for various tests
-FETCH_FILE="home.html"
+#FETCH_FILE="home.html"
+FETCH_FILE="csapp.c"
 
 #####
 # Helper functions

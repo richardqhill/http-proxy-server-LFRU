@@ -261,7 +261,7 @@ void write_to_cache(char *uri, char *data, int size){
     int LRU_cache_size_debug = LRU_cache_size;
 
     /* If LFU cache size < 3, insert object into LFU cache */
-    if(LFU_cache_count < 3) {
+    if(LFU_cache_count < 90) {
         cache_insert_at_end(LFU_cache_start, uri, data, size);
     }
     else{
