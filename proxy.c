@@ -97,7 +97,7 @@ void doit(int connfd) {
         Rio_writen(connfd, response, response_len);
 
         /* If this read from cache changed which 3 objects should be in LFU, update LFU */
-        pthread_rwlock_wrlock(&rwlock);
+        //pthread_rwlock_wrlock(&rwlock);
 
         update_current_top_three(clist_head);
         cache_object* victim = LFU_cache_update_needed();
@@ -115,7 +115,7 @@ void doit(int connfd) {
             pthread_rwlock_unlock(&victim->rwlock);
         }
 
-        pthread_rwlock_unlock(&rwlock);
+        //pthread_rwlock_unlock(&rwlock);
     }
     else{ /* If not in cache, get resource from host server */
 
@@ -217,12 +217,12 @@ bool read_requesthdrs(rio_t *rp, char *header_buf){
 /* See if given URI is in LFU or LRU cache. Return pointer to cache object if present */
 cache_object* search_caches(char *uri){
 
-    pthread_rwlock_wrlock(&rwlock);
+    //pthread_rwlock_wrlock(&rwlock);
 
     cache_object* iterator = LFU_cache_start;
     while(iterator != NULL){
         if(strcmp(iterator->uri, uri) == 0){
-            pthread_rwlock_unlock(&rwlock);
+            //pthread_rwlock_unlock(&rwlock);
             return iterator;
         }
         cache_object* temp = iterator->next;
@@ -233,14 +233,14 @@ cache_object* search_caches(char *uri){
     while(iterator != NULL){
 
         if(strcmp(iterator->uri, uri) == 0){
-            pthread_rwlock_unlock(&rwlock);
+            //pthread_rwlock_unlock(&rwlock);
             return iterator;
         }
         cache_object* temp = iterator->next;
         iterator = temp;
     }
 
-    pthread_rwlock_unlock(&rwlock);
+    //pthread_rwlock_unlock(&rwlock);
     return NULL;
 }
 
@@ -250,7 +250,7 @@ void write_to_cache(char *uri, char *data, int response_size, int content_len) {
     if(response_size > MAX_OBJECT_SIZE)
         return;
 
-    pthread_rwlock_wrlock(&rwlock);
+    //pthread_rwlock_wrlock(&rwlock);
 
     update_current_top_three(clist_head);
 
@@ -284,7 +284,7 @@ void write_to_cache(char *uri, char *data, int response_size, int content_len) {
     strcpy(previous_uri1, current_uri1);
     strcpy(previous_uri2, current_uri2);
     strcpy(previous_uri3, current_uri3);
-    pthread_rwlock_unlock(&rwlock);
+    //pthread_rwlock_unlock(&rwlock);
 }
 
 /* Insert a new cache object at the end of the LFU or LRU cache. */
@@ -348,7 +348,7 @@ cache_object* LFU_cache_update_needed(){
 /* Remove oldest node from LRU cache (first node after LRU head) */
 void evict_oldest_from_LRU(){
 
-    pthread_rwlock_wrlock(&rwlock);
+    //pthread_rwlock_wrlock(&rwlock);
 
     cache_object* victim = LRU_cache_start->next;
 
@@ -360,27 +360,27 @@ void evict_oldest_from_LRU(){
 
     pthread_rwlock_unlock(&victim->rwlock);
 
-    pthread_rwlock_unlock(&rwlock);
+    //pthread_rwlock_unlock(&rwlock);
 }
 
 /* Return pointer to count node for given URI if we have one */
 count_node* find_count_node(count_node* head, char* uri){
 
-    pthread_rwlock_wrlock(&rwlock);
+    //pthread_rwlock_wrlock(&rwlock);
 
     count_node* iterator = head;
     while(iterator != NULL){
         if(!strcmp(iterator->uri,uri)) {
             iterator->count++;  /* If found, increment count */
 
-            pthread_rwlock_unlock(&rwlock);
+            //pthread_rwlock_unlock(&rwlock);
             return iterator;
         }
         else {
             iterator = iterator->next;
         }
     }
-    pthread_rwlock_unlock(&rwlock);
+    //pthread_rwlock_unlock(&rwlock);
     return NULL;
 }
 
